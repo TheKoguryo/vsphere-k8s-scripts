@@ -128,10 +128,9 @@ do
 loginfo "Adding registry to the node '"${IPS_NODES_READ}"'..."
 sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q -t root@"${SV_MASTER_IP}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ./tkc-ssh-privatekey -t -q vmware-system-user@"${IPS_NODES_READ}" << EOF
 sudo -i
-cp /etc/docker/daemon.json /etc/docker/daemon.json.bak
-cat /etc/docker/daemon.json | jq '. | select(.bridge=="none")."insecure-registries" |= (.+ ["'"${URL_REGISTRY_TRIM}"'"] | unique)' > /etc/docker/daemon.json.new
-#Verify that the change was added successfully. If it was, replace daemon.json. If not, exit without copying.
-if [[ -s /etc/docker/daemon.json.new ]]; then mv /etc/docker/daemon.json.new /etc/docker/daemon.json ; else exit 2; fi
+curl https://"${URL_REGISTRY_TRIM}"/api/systeminfo/getcert -k -o "${URL_REGISTRY_TRIM}".crt
+cp "${URL_REGISTRY_TRIM}".crt /etc/ssl/certs/
+/usr/bin/rehash_ca_certificates.sh
 EOF
 if [ $? -eq 0 ] ;
 then  
@@ -148,8 +147,7 @@ do
 loginfo "Restarting Docker on node '"${IPS_NODES_READ}"'..."
 sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q -t root@"${SV_MASTER_IP}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ./tkc-ssh-privatekey -t -q vmware-system-user@"${IPS_NODES_READ}" << EOF
 sudo -i
-systemctl stop docker
-systemctl start docker
+systemctl restart containerd
 EOF
 if [ $? -eq 0 ] ;
 then  
