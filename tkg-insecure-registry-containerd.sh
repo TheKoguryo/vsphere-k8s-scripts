@@ -8,9 +8,12 @@
 # 
 # Author: José Manzaneque (jmanzaneque@vmware.com)
 # Dependencies: curl, jq, sshpass
+curl --version
+jq --version
+sshpass -V
 
-SV_IP='192.168.40.129' #VIP for the Supervisor Cluster
-VC_IP='vcsa.pacific.local' #URL for the vCenter
+SV_IP='10.193.109.45' #VIP for the Supervisor Cluster
+VC_IP='pacific-vcsa.haas-415.pez.pivotal.io' #URL for the vCenter
 VC_ADMIN_USER='administrator@vsphere.local' #User for the Supervisor Cluster
 VC_ADMIN_PASSWORD='VMware1!' #Password for the Supervisor Cluster user
 
