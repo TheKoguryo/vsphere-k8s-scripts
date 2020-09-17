@@ -8,9 +8,11 @@
 # 
 # Author: José Manzaneque (jmanzaneque@vmware.com)
 # Dependencies: curl, jq, sshpass
+curl --version
+jq --version
 
-SV_IP='192.168.40.129' #VIP for the Supervisor Cluster
-VC_IP='vcsa.pacific.local' #URL for the vCenter
+SV_IP='10.213.208.46' #VIP for the Supervisor Cluster
+VC_IP='pacific-vcsa.haas-401.pez.vmware.com' #URL for the vCenter
 VC_ADMIN_USER='administrator@vsphere.local' #User for the Supervisor Cluster
 VC_ADMIN_PASSWORD='VMware1!' #Password for the Supervisor Cluster user
 
@@ -70,19 +72,6 @@ else
       exit 2
 fi
 
-#SSH into vCenter to get credentials for the supervisor cluster master VMs
-sshpass -p "${VC_ADMIN_PASSWORD}" ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q root@"${VC_IP}" com.vmware.shell /usr/lib/vmware-wcp/decryptK8Pwd.py > ./sv-cluster-creds 2>&1
-if [ $? -eq 0 ] ;
-then      
-      loginfo "Connecting to the vCenter to get the supervisor cluster VM credentials..."
-      SV_MASTER_IP=$(cat ./sv-cluster-creds | sed -n -e 's/^.*IP: //p')
-      SV_MASTER_PASSWORD=$(cat ./sv-cluster-creds | sed -n -e 's/^.*PWD: //p')
-      loginfo "Supervisor cluster master IP is: "${SV_MASTER_IP}""
-else
-      logerr "There was an error logging into the vCenter. Exiting..."
-      exit 2
-fi
-
 #Get Supervisor Cluster token to get the TKC nodes SSH Password
 loginfo "Getting Supervisor Cluster Kubernetes API token..."
 SV_TOKEN=$(curl -XPOST -s --fail -u "${VC_ADMIN_USER}":"${VC_ADMIN_PASSWORD}" https://"${SV_IP}":443/wcp/login -k -H "Content-Type: application/json" | jq -r '.session_id')
@@ -111,24 +100,12 @@ else
       exit 2
 fi
 
-# Transfer the TKC nodes SSH private key to the Supervisor Cluster Master VM
-loginfo "Transferring the TKC nodes SSH private key to the supervisor cluster VM..."
-sshpass -p "${SV_MASTER_PASSWORD}" scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ./tkc-ssh-privatekey root@"${SV_MASTER_IP}":./tkc-ssh-privatekey >> /dev/null
-if [ $? -eq 0 ] ;
-then      
-      loginfo "TKC SSH private key transferred successfully!"
-else
-      logerr "There was an error transferring the TKC nodes SSH private key. Exiting..."
-      exit 2
-fi
-
 # SSH to every node and verify if the registry does not exist in /etc/docker/daemon.json. If it does not exist, add it
-export SSHPASS="${SV_MASTER_PASSWORD}"
 
 while read -r IPS_NODES_READ;
 do
 loginfo "Adding registry to the node '"${IPS_NODES_READ}"'..."
-sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q -t root@"${SV_MASTER_IP}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ./tkc-ssh-privatekey -t -q vmware-system-user@"${IPS_NODES_READ}" << EOF
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ./tkc-ssh-privatekey -t -q vmware-system-user@"${IPS_NODES_READ}" << EOF
 sudo -i
 curl ${URL_REGISTRY_CERT} -k -o "${URL_REGISTRY_TRIM}".crt
 cp "${URL_REGISTRY_TRIM}".crt /etc/ssl/certs/
@@ -146,16 +123,16 @@ done < "./ip-nodes-tkg"
 # Restart the Docker daemon
 while read -r IPS_NODES_READ;
 do
-loginfo "Restarting Docker on node '"${IPS_NODES_READ}"'..."
-sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q -t root@"${SV_MASTER_IP}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ./tkc-ssh-privatekey -t -q vmware-system-user@"${IPS_NODES_READ}" << EOF
+loginfo "Restarting ContainerD on node '"${IPS_NODES_READ}"'..."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ./tkc-ssh-privatekey -t -q vmware-system-user@"${IPS_NODES_READ}" << EOF
 sudo -i
 systemctl restart containerd
 EOF
 if [ $? -eq 0 ] ;
 then  
-      loginfo "Docker daemon restarted successfully!"
+      loginfo "ContainerD daemon restarted successfully!"
 else
-      logerr "There was an error restarting the Docker daemon. Exiting..."
+      logerr "There was an error restarting the ContainerD daemon. Exiting..."
       exit 2
 fi
 done < "./ip-nodes-tkg"
